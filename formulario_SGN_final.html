@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestoría SGN - Consulta de Matrícula</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
+  .card { background: #fff; border-radius: 16px; border: 2px solid #8B1A1A; max-width: 420px; width: 100%; padding: 2rem; }
+  .logo-area { text-align: center; margin-bottom: 1.5rem; }
+  .logo-circle { width: 90px; height: 90px; border-radius: 50%; border: 2px solid #8B1A1A; margin: 0 auto 0.5rem; display: flex; align-items: center; justify-content: center; background: #fff; }
+  .logo-text { font-size: 22px; font-family: Georgia, serif; color: #6a6a6a; }
+  .logo-accent { color: #8B1A1A; }
+  .gestoria-name { font-size: 11px; color: #555; letter-spacing: 2px; margin-top: 2px; }
+  h1 { font-size: 18px; color: #8B1A1A; text-align: center; margin-bottom: 4px; }
+  .gratis { font-size: 13px; color: #3B6D11; text-align: center; font-weight: bold; margin-bottom: 1.5rem; }
+  label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; margin-top: 1rem; }
+  input { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #ccc; border-radius: 8px; text-transform: uppercase; }
+  input:focus { outline: none; border-color: #8B1A1A; box-shadow: 0 0 0 2px rgba(139,26,26,0.12); }
+  button { width: 100%; padding: 12px; background: #8B1A1A; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 1rem; }
+  button:hover { background: #6e1414; }
+  button:disabled { background: #bbb; cursor: not-allowed; }
+  .spinner { display: none; text-align: center; margin-top: 1rem; font-size: 13px; color: #666; }
+  .result { display: none; margin-top: 1rem; padding: 1rem; border-radius: 8px; font-size: 14px; line-height: 1.6; }
+  .result.ok { background: #eaf3de; color: #3B6D11; border: 1px solid #97C459; }
+  .result.warn { background: #FAECE7; color: #993C1D; border: 1px solid #F0997B; }
+  .disclaimer { font-size: 10px; color: #999; text-align: center; margin-top: 1rem; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo-area">
+    <div class="logo-circle">
+      <span class="logo-text">G<span class="logo-accent">·</span>A</span>
+    </div>
+    <div class="gestoria-name">GESTORÍA SGN</div>
+  </div>
+
+  <h1>Compruebe aquí su matrícula</h1>
+  <p class="gratis">✓ Consulta gratuita</p>
+
+  <label>Matrícula del vehículo</label>
+  <input type="text" id="matricula" placeholder="Ej: 1234ABC" maxlength="10">
+
+  <label>NIF / DNI del titular <span style="font-weight:normal;color:#aaa">(opcional)</span></label>
+  <input type="text" id="nif" placeholder="Ej: 12345678A" maxlength="12">
+
+  <button id="btn" onclick="consultar()">Consultar ahora</button>
+
+  <div class="spinner" id="spinner">Consultando boletines oficiales...</div>
+  <div class="result" id="result"></div>
+
+  <p class="disclaimer">Consulta meramente informativa. Gestoría SGN no se responsabiliza de los resultados obtenidos ni de las decisiones adoptadas en base a ellos.</p>
+</div>
+
+<script>
+async function consultar() {
+  const matricula = document.getElementById('matricula').value.trim();
+  const nif = document.getElementById('nif').value.trim();
+  if (!matricula) { document.getElementById('matricula').focus(); return; }
+
+  const btn = document.getElementById('btn');
+  const spinner = document.getElementById('spinner');
+  const result = document.getElementById('result');
+
+  btn.disabled = true;
+  spinner.style.display = 'block';
+  result.style.display = 'none';
+
+  try {
+    const resp = await fetch('https://sgn-boe.onrender.com/consultar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({matricula, nif})
+    });
+    const datos = await resp.json();
+
+    spinner.style.display = 'none';
+    btn.disabled = false;
+    result.style.display = 'block';
+
+    if (datos.incidencia) {
+      result.className = 'result warn';
+      result.innerHTML = '⚠ Hemos encontrado una incidencia relacionada con la matrícula <strong>' + matricula.toUpperCase() + '</strong>. Nos pondremos en contacto con usted a la mayor brevedad.';
+    } else {
+      result.className = 'result ok';
+      result.innerHTML = '✓ Con los datos introducidos no hemos encontrado incidencias para la matrícula <strong>' + matricula.toUpperCase() + '</strong> según nuestras fuentes en los últimos 3 meses.';
+    }
+  } catch(e) {
+    spinner.style.display = 'none';
+    btn.disabled = false;
+    result.style.display = 'block';
+    result.className = 'result warn';
+    result.innerHTML = 'Error de conexión. Por favor inténtelo de nuevo en unos segundos.';
+  }
+}
+</script>
+</body>
+</html>
