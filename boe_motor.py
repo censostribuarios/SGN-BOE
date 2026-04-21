@@ -1,112 +1,40 @@
-"""
-Motor de búsqueda BOE - Gestoría SGN
-Consulta el Tablón Edictal Único y el Tablón Edictal Judicial del BOE
-por matrícula y/o NIF y devuelve si hay o no incidencias.
-"""
+import requests
+from urllib.parse import urlencode
+from datetime import datetime, timedelta
 
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+SIN_RESULTADOS = "No se han encontrado documentos"
 
-# URLs de búsqueda
-URL_TEU  = "https://www.boe.es/notificaciones/notificaciones.php"   # Tablón Edictal Único
-URL_TEJU = "https://www.boe.es/buscar/edictos_judiciales.php"       # Tablón Edictal Judicial
-
-# Frase que aparece cuando no hay resultados
-SIN_RESULTADOS = "No se han encontrado documentos que satisfagan sus criterios de búsqueda"
-
-
-def _crear_driver():
-    """Crea y devuelve un driver de Chrome en modo headless (sin ventana)."""
-    opciones = Options()
-    opciones.add_argument("--headless")
-    opciones.add_argument("--no-sandbox")
-    opciones.add_argument("--disable-dev-shm-usage")
-    opciones.add_argument("--window-size=1920,1080")
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=opciones
-    )
-    return driver
-
-
-def _buscar_en_url(driver, url, termino):
-    """
-    Abre la URL, introduce el término de búsqueda y devuelve:
-    - True  si se encontró algún resultado
-    - False si no hay resultados
-    """
-    wait = WebDriverWait(driver, 20)
+def _buscar_teu(termino):
     try:
-        driver.get(url)
-        # Buscar el campo de texto principal (dato o texto según la página)
-        campo = wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, "input[name='dato'], input[name='texto'], input[type='text']")
-        ))
-        campo.clear()
-        campo.send_keys(termino)
-        campo.send_keys(Keys.ENTER)
-        time.sleep(4)  # Dar tiempo a que cargue la respuesta
+        fecha = (datetime.now() - timedelta(days=90)).strftime("%d/%m/%Y")
+        params = {"dato": termino, "fecha_desde": fecha, "fecha_hasta": "", "page_hits": "10", "origen": "N", "lang": "es", "searchType": "anuncio_notif"}
+        url = "https://www.boe.es/notificaciones/notificaciones.php?" + urlencode(params)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        return SIN_RESULTADOS.lower() not in resp.text.lower() and len(resp.text) > 500
+    except:
+        return False
 
-        cuerpo = driver.find_element(By.TAG_NAME, "body").text
-        hay_resultados = SIN_RESULTADOS.lower() not in cuerpo.lower()
-        return hay_resultados
-
-    except Exception as e:
-        print(f"[ERROR] Al buscar en {url}: {e}")
-        return False  # En caso de error, asumimos sin resultados (conservador)
-
+def _buscar_teju(termino):
+    try:
+        fecha = (datetime.now() - timedelta(days=120)).strftime("%d/%m/%Y")
+        params = {"texto": termino, "fecha_desde": fecha, "fecha_hasta": "", "page_hits": "10", "origen": "N", "lang": "es", "searchType": "edicto_judicial"}
+        url = "https://www.boe.es/buscar/edictos_judiciales.php?" + urlencode(params)
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        return SIN_RESULTADOS.lower() not in resp.text.lower() and len(resp.text) > 500
+    except:
+        return False
 
 def consultar(matricula: str, nif: str = "") -> dict:
-    """
-    Función principal. Recibe matrícula y NIF opcionales.
-    Devuelve un diccionario con:
-      - incidencia (bool): True si se encontró algo
-      - fuentes (list): lista de fuentes donde apareció
-    """
-    driver = _crear_driver()
     incidencias = []
-
-    try:
-        # Construir término de búsqueda combinado si hay NIF
-        if nif:
-            termino = f"{matricula} .O {nif}"
-        else:
-            termino = matricula
-
-        # Búsqueda 1: Tablón Edictal Único (administrativo)
-        if _buscar_en_url(driver, URL_TEU, termino):
+    if _buscar_teu(matricula.upper()):
+        incidencias.append("Tablón Edictal Único (BOE)")
+    if nif and "Tablón Edictal Único (BOE)" not in incidencias:
+        if _buscar_teu(nif.upper()):
             incidencias.append("Tablón Edictal Único (BOE)")
-
-        # Búsqueda 2: Tablón Edictal Judicial
-        if _buscar_en_url(driver, URL_TEJU, termino):
+    if _buscar_teju(matricula.upper()):
+        incidencias.append("Tablón Edictal Judicial (BOE)")
+    if nif and "Tablón Edictal Judicial (BOE)" not in incidencias:
+        if _buscar_teju(nif.upper()):
             incidencias.append("Tablón Edictal Judicial (BOE)")
-
-    finally:
-        driver.quit()
-
-    return {
-        "incidencia": len(incidencias) > 0,
-        "fuentes": incidencias,
-        "matricula": matricula.upper(),
-        "nif": nif.upper() if nif else ""
-    }
-
-
-# --- Uso directo desde línea de comandos (para pruebas) ---
-if __name__ == "__main__":
-    import sys
-    mat = sys.argv[1] if len(sys.argv) > 1 else "1234ABC"
-    nif = sys.argv[2] if len(sys.argv) > 2 else ""
-    print(f"\nConsultando matrícula: {mat}" + (f" / NIF: {nif}" if nif else ""))
-    resultado = consultar(mat, nif)
-    if resultado["incidencia"]:
-        print(f"⚠️  INCIDENCIA ENCONTRADA en: {', '.join(resultado['fuentes'])}")
-    else:
-        print("✅  Sin incidencias encontradas")
+    return {"incidencia": len(incidencias) > 0, "fuentes": incidencias, "matricula": matricula.upper(), "nif": nif.upper() if nif else ""}
